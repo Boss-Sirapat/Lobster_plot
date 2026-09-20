@@ -20,7 +20,7 @@ Arial Rounded MT Bold is used when installed, with Arial as a fallback.
 
 Place `index.html` and `.nojekyll` at the root of the publishing branch. In repository Settings → Pages, select **Deploy from a branch**, choose that branch and **/ (root)**, then Save.
 
-Expected address after deployment: https://Boss-Sirapat.github.io/Lobster_plot/
+Expected address after deployment: (LOBSTER-COHP-COOP-COBI-plot.html)
 
 ## Supported input
 
