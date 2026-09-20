@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LOBSTER COHP / COOP / COBI Viewer</title>
+<style>
+:root{--bg:#f6f7fb;--card:#fff;--text:#18202a;--muted:#657080;--line:#dfe4ea;--accent:#2563eb}
+*{box-sizing:border-box} body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Arial,sans-serif;background:var(--bg);color:var(--text)}
+header{padding:22px 26px;background:#111827;color:white} header h1{margin:0 0 5px;font-size:23px} header p{margin:0;color:#cbd5e1;font-size:13px}
+main{display:grid;grid-template-columns:330px 1fr;gap:16px;padding:16px;max-width:1500px;margin:auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;box-shadow:0 2px 8px rgba(0,0,0,.04)}
+h2{font-size:15px;margin:0 0 10px} h3{font-size:13px;margin:14px 0 7px}
+label{display:block;font-size:12px;color:var(--muted);margin:9px 0 4px}
+input,select,button{font:inherit} input[type=file],input[type=number],select{width:100%;padding:7px;border:1px solid #cfd6df;border-radius:7px;background:white}
+button{border:1px solid #cbd5e1;border-radius:7px;background:white;padding:7px 10px;cursor:pointer}button:hover{background:#f1f5f9}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.checks{display:flex;gap:12px;flex-wrap:wrap}.checks label{display:flex;align-items:center;gap:5px;margin:4px 0;color:var(--text)}
+.actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}
+#plot{width:100%;height:min(78vh,900px);min-height:560px;border:1px solid var(--line);border-radius:9px;background:#fff}
+.status{font-size:12px;color:var(--muted);margin-top:8px;white-space:pre-wrap}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px}.stat{border:1px solid var(--line);border-radius:8px;padding:8px}.stat b{display:block;font-size:16px}.stat span{font-size:11px;color:var(--muted)}
+table{width:100%;border-collapse:collapse;font-size:12px}th,td{border-bottom:1px solid var(--line);padding:6px;text-align:left}th{background:#f8fafc;position:sticky;top:0}
+#bondTable{max-height:250px;overflow:auto;border:1px solid var(--line);border-radius:7px}
+.help{font-size:11px;color:var(--muted);line-height:1.45}
+@media(max-width:900px){main{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<header>
+<h1>LOBSTER COHP / COOP / COBI Viewer</h1>
+<p>Browser-only viewer for COHPCAR.lobster, COOPCAR.lobster and COBICAR.lobster from VASP + LOBSTER</p>
+</header>
+<main>
+<section>
+<div class="card">
+<h2>1. Load LOBSTER files</h2>
+<label>COHPCAR.lobster</label><input id="cohpFile" type="file" accept=".lobster,.txt">
+<label>COOPCAR.lobster</label><input id="coopFile" type="file" accept=".lobster,.txt">
+<label>COBICAR.lobster</label><input id="cobiFile" type="file" accept=".lobster,.txt">
+<div class="actions">
+<button id="loadFiles">Load selected files</button>
+
+</div>
+<div id="status" class="status">No dataset loaded.</div>
+</div>
+
+<div class="card">
+<h2>2. Plot controls</h2>
+<label>Quantity</label>
+<select id="quantity">
+<option value="COHP">COHP</option><option value="COOP">COOP</option><option value="COBI">COBI</option>
+</select>
+<label>Representation</label>
+<select id="representation">
+<option value="minusP">bonding-positive: −pCOHP / COOP / COBI</option>
+<option value="raw">raw LOBSTER quantity</option>
+</select>
+<label>Bond / interaction</label>
+<select id="bond"></select>
+<div class="checks">
+<label><input id="sumSpin" type="checkbox" checked> Sum spin ↑ + ↓</label>
+<label><input id="showUp" type="checkbox"> Spin ↑</label>
+<label><input id="showDown" type="checkbox"> Spin ↓</label>
+<label><input id="showAverage" type="checkbox"> Average</label>
+</div>
+<div class="row">
+<div><label>Emin (eV)</label><input id="emin" type="number" value="-10" step="0.1"></div>
+<div><label>Emax (eV)</label><input id="emax" type="number" value="3" step="0.1"></div>
+</div>
+<div class="row">
+<div><label>Xmin (COHP/COOP/COBI)</label><input id="xmin" type="number" value="-3" step="0.1"></div>
+<div><label>Xmax (COHP/COOP/COBI)</label><input id="xmax" type="number" value="3" step="0.1"></div>
+</div>
+<div class="checks">
+<label><input id="autoX" type="checkbox" checked> Auto X range</label>
+<label><input id="occupiedOnly" type="checkbox" checked> Bonding area up to EF</label>
+</div>
+<div class="row">
+<div><label><input id="autoXInterval" type="checkbox" checked> Auto X interval</label><input id="xInterval" aria-label="X tick interval" type="number" step="any" disabled></div>
+<div><label><input id="autoYInterval" type="checkbox" checked> Auto Y interval</label><input id="yInterval" aria-label="Y tick interval (eV)" type="number" step="any" disabled></div>
+</div>
+<div id="intervalStatus" class="status" role="status"></div>
+<div class="actions">
+<button id="plotBtn">Update plot</button>
+<button id="resetRange">Reset range</button>
+</div>
+</div>
+
+<div class="card">
+<h2>3. Bonding / antibonding analysis</h2>
+<div class="help">Bonding percentage is calculated from the displayed bonding-positive curve over the selected energy range (or only the occupied region if checked): %Bonding = A<sub>bonding</sub>/(A<sub>bonding</sub>+A<sub>antibonding</sub>) × 100.</div>
+<div class="stats">
+<div class="stat"><b id="bondArea">—</b><span>Bonding area</span></div>
+<div class="stat"><b id="antiArea">—</b><span>Antibonding area</span></div>
+<div class="stat"><b id="bondPct">—</b><span>% Bonding</span></div>
+<div class="stat"><b id="intEF">—</b><span>Integrated at EF</span></div>
+</div>
+<div class="actions">
+<button id="csvBtn">Export current data CSV</button>
+<button id="pngBtn">Save plot (PNG)</button>
+<button id="svgBtn">Save plot (SVG)</button>
+<div id="saveStatus" class="status" role="status"></div>
+</div>
+</div>
+
+<div class="card">
+<h2>4. Interaction table</h2>
+<div id="bondTable"></div>
+</div>
+</section>
+
+<section>
+<div class="card">
+<svg id="plot" font-weight="bold" font-family="Arial Rounded MT Bold, Arial, sans-serif" viewBox="0 0 760 1020" preserveAspectRatio="xMidYMid meet"></svg>
+<div class="status">X-axis = −pCOHP / COOP / COBI value; Y-axis = Energy (eV), with EF at 0 eV. Use Xmin/Xmax to control the horizontal range and Emin/Emax to control the energy range.</div>
+</div>
+</section>
+</main>
+
+<script>
+
+const state = {datasets:{}, current:null, parsed:null, lastPlot:null};
+
+function num(v){return Number(v)}
+function fmt(v,n=4){return Number.isFinite(v)?v.toFixed(n):"—"}
+function parseLobster(text, kind){
+  const lines=text.replace(/^\uFEFF/,"").replace(/\r/g,"").split("\n");
+  const numbers=line=>line.trim().split(/\s+/).map(v=>Number(v.replace(/[dD]/,"E")));
+  const hi=lines.findIndex(line=>{
+    const h=numbers(line);
+    return h.length===6 && h.every(Number.isFinite) && Number.isInteger(h[0]) && h[0]>0 && [1,2].includes(h[1]) && Number.isInteger(h[2]) && h[2]>0;
+  });
+  if(hi<0)throw new Error("Expected a COHPCAR, COOPCAR or pairwise COBICAR header (groups, spins, energy points, Emin, Emax, EF). Integrated ICOXXLIST files and multi-center COBI layouts are not supported.");
+  const [nGroups,nSpin,nE]=numbers(lines[hi]);
+  const expected=1+2*nGroups*nSpin;
+  const labels=[],data=[];
+  for(let i=hi+1;i<lines.length;i++){
+    const line=lines[i].trim();
+    if(!line)continue;
+    const lab=line.match(/^No\.\s*(\d+)\s*:\s*(.+)$/i);
+    if(lab){labels.push({sourceId:+lab[1],label:lab[2]});continue}
+    if(!/^[+-]?(?:\d|\.\d)/.test(line))continue;
+    const row=numbers(line);
+    if(row.length!==expected || !row.every(Number.isFinite))throw new Error(`Line ${i+1}: expected ${expected} numeric columns, found ${row.length}. This file layout is not supported or the row is incomplete.`);
+    data.push(row);
+  }
+  if(data.length<2)throw new Error("At least two valid energy rows are required.");
+  if(labels.length && labels.length!==nGroups-1)throw new Error(`Found ${labels.length} interaction labels but the header requires ${nGroups-1}. Cannot safely map curves to bonds.`);
+  data.sort((a,b)=>a[0]-b[0]);
+  if(data[0][0]===data[data.length-1][0])throw new Error("The energy range is zero.");
+  const bonds=[];
+  for(let group=1;group<nGroups;group++){
+    const lab=labels[group-1];
+    bonds.push({id:group,label:lab?lab.label:`Interaction ${group}`,sourceId:lab?.sourceId??group});
+  }
+  if(!bonds.length)bonds.push({id:0,label:"Average",sourceId:0});
+  const E=data.map(r=>r[0]);
+  function series(spin,group){
+    if(spin<0||spin>=nSpin||group<0||group>=nGroups)throw new Error("Selected interaction is not present in this dataset.");
+    const base=1+spin*nGroups*2+group*2;
+    return {value:data.map(r=>r[base]),integrated:data.map(r=>r[base+1])};
+  }
+  return {kind,nGroups,nSpin,nE,E,bonds,series,raw:data,warnings:data.length!==nE?`Header: ${nE} points; file: ${data.length} points (possibly truncated).`:""};
+}
+function updateStatus(){
+  document.getElementById("status").textContent=Object.entries(state.datasets).map(([q,ds])=>`${q}: ${ds.name}; ${ds.nGroups-1} interactions, ${ds.nSpin} spin channel(s), ${ds.E.length} points.${ds.warnings?"\n"+ds.warnings:""}`).join("\n")||"No dataset loaded.";
+  for(const o of document.getElementById("quantity").options)o.disabled=!state.datasets[o.value];
+}
+function setDataset(kind,text,name){
+  try{const ds=parseLobster(text,kind);ds.name=name;state.datasets[kind]=ds;return true}
+  catch(e){delete state.datasets[kind];alert(`${kind}: ${e.message}`);return false}
+}
+function datasetFor(q){return state.datasets[q]||null}
+function currentSeries(ds,bondId,spin,average=false){
+  return ds.series(spin,average?0:bondId);
+}
+function displayedValue(kind, rep, y){
+  if(rep==="raw") return y;
+  return kind==="COHP" ? -y : y;
+}
+function getSelection(){
+  const q=document.getElementById("quantity").value;
+  const ds=datasetFor(q); if(!ds) return null;
+  const bond=Number(document.getElementById("bond").value);
+  const rep=document.getElementById("representation").value;
+  const sum=document.getElementById("sumSpin").checked;
+  const up=document.getElementById("showUp").checked;
+  const down=document.getElementById("showDown").checked;
+  return {q,ds,bond,rep,sum,up,down};
+}
+function trapzPositive(E,Y,positive=true){
+  let area=0;
+  for(let i=1;i<E.length;i++){
+    const x0=E[i-1],x1=E[i],y0=Y[i-1],y1=Y[i];
+    if(!Number.isFinite(y0)||!Number.isFinite(y1)) continue;
+    const a=positive?Math.max(y0,0):Math.max(-y0,0);
+    const b=positive?Math.max(y1,0):Math.max(-y1,0);
+    area += 0.5*(a+b)*Math.abs(x1-x0);
+  }
+  return area;
+}
+function clipRange(E,Y,emin,emax){
+  const x=[],y=[];
+  for(let i=0;i<E.length;i++) if(E[i]>=emin && E[i]<=emax){x.push(E[i]);y.push(Y[i]);}
+  return {x,y};
+}
+function interpolateAtZero(E,Y){
+  let best=0,bd=Infinity;
+  for(let i=0;i<E.length;i++){let d=Math.abs(E[i]);if(d<bd){bd=d;best=i}}
+  return Y[best];
+}
+function updateBondList(){
+  const q=document.getElementById("quantity").value, ds=datasetFor(q), sel=document.getElementById("bond");
+  sel.innerHTML="";
+  if(!ds) return;
+  ds.bonds.forEach(b=>{const o=document.createElement("option");o.value=b.id;o.textContent=b.id===0?"Average":`No.${b.sourceId??b.id}: ${b.label}`;sel.appendChild(o)});
+}
+function renderTable(){
+  const q=document.getElementById("quantity").value, ds=datasetFor(q);
+  const box=document.getElementById("bondTable");
+  if(!ds){box.innerHTML="<div class='help' style='padding:8px'>Load a LOBSTER file first.</div>";return}
+  let rows="<table><thead><tr><th>No.</th><th>Interaction</th><th>Length (Å)</th></tr></thead><tbody>";
+  ds.bonds.forEach(b=>{
+    const m=b.label.match(/\(([-+0-9.eE]+)\)\s*$/);
+    rows+=`<tr><td>${b.id}</td><td>${b.label.replace(/\(([-+0-9.eE]+)\)\s*$/,"")}</td><td>${m?m[1]:"—"}</td></tr>`;
+  });
+  rows+="</tbody></table>"; box.innerHTML=rows;
+}
+function renderPlot(){
+  const s=getSelection(); if(!s){clearPlot("Load/select a LOBSTER dataset.");return}
+  const {q,ds,bond,rep,sum,up,down}=s;
+  let emin=parseFloat(document.getElementById("emin").value), emax=parseFloat(document.getElementById("emax").value);
+  if(!Number.isFinite(emin)||!Number.isFinite(emax)){emin=ds.E[0];emax=ds.E[ds.E.length-1]}
+  if(emin>=emax){alert("Emin must be smaller than Emax.");return}
+  const curves=[];
+  if(sum){
+    const a=currentSeries(ds,bond,0), b=ds.nSpin>1?currentSeries(ds,bond,1):null;
+    const y=a.value.map((v,i)=>displayedValue(q,rep,v+(b?b.value[i]:0)));
+    curves.push({name:ds.nSpin>1?"Spin-summed":"pCOX",E:ds.E,Y:y});
+  }else{
+    if(up||ds.nSpin===1){const a=currentSeries(ds,bond,0);curves.push({name:"Spin ↑",E:ds.E,Y:a.value.map(v=>displayedValue(q,rep,v))})}
+    if(down&&ds.nSpin>1){const a=currentSeries(ds,bond,1);curves.push({name:"Spin ↓",E:ds.E,Y:a.value.map(v=>displayedValue(q,rep,v))})}
+  }
+  if(document.getElementById("showAverage").checked){
+    const a=currentSeries(ds,0,0,true), b=ds.nSpin>1?currentSeries(ds,0,1,true):null;
+    const y=a.value.map((v,i)=>displayedValue(q,rep,v+(b?b.value[i]:0)));
+    curves.push({name:"Average",E:ds.E,Y:y,dash:true});
+  }
+  if(!curves.length){alert("Select Sum spin, Spin ↑, or Spin ↓.");return}
+  const occ=document.getElementById("occupiedOnly").checked;
+  const anaMax=occ?Math.min(emax,0):emax, anaMin=emin;
+  const primary=clipRange(curves[0].E,curves[0].Y,anaMin,anaMax);
+  const BA=trapzPositive(primary.x,primary.y,true), AA=trapzPositive(primary.x,primary.y,false);
+  const pct=(BA+AA)>0?100*BA/(BA+AA):NaN;
+  let integ="—";
+  const u=currentSeries(ds,bond,0).integrated, d=ds.nSpin>1?currentSeries(ds,bond,1).integrated:null;
+  let iv=interpolateAtZero(ds.E,u)+(d?interpolateAtZero(ds.E,d):0);
+  if(q==="COHP" && rep!=="raw") iv=-iv;
+  integ=fmt(iv,4);
+  document.getElementById("bondArea").textContent=fmt(BA,4);
+  document.getElementById("antiArea").textContent=fmt(AA,4);
+  document.getElementById("bondPct").textContent=Number.isFinite(pct)?pct.toFixed(2)+"%":"—";
+  document.getElementById("intEF").textContent=integ;
+  let xmin=parseFloat(document.getElementById("xmin").value);
+  let xmax=parseFloat(document.getElementById("xmax").value);
+  const visibleVals=[];
+  curves.forEach(c=>c.Y.forEach((v,i)=>{
+    if(c.E[i]>=emin && c.E[i]<=emax && Number.isFinite(v)) visibleVals.push(v);
+  }));
+  if(document.getElementById("autoX").checked||!Number.isFinite(xmin)||!Number.isFinite(xmax)){
+    const peak=visibleVals.reduce((a,v)=>Math.max(a,Math.abs(v)),0);
+    const extent=peak>0?peak*1.1:1;
+    xmin=-extent; xmax=extent;
+    document.getElementById("xmin").value=Number(xmin.toPrecision(6));
+    document.getElementById("xmax").value=Number(xmax.toPrecision(6));
+  }
+  if(xmin>=xmax){alert("Xmin must be smaller than Xmax.");return}
+  drawSVG(curves,emin,emax,xmin,xmax,q,rep,bond,ds);
+  state.lastPlot={curves,emin,emax,xmin,xmax,q,rep,bond,ds,BA,AA,pct,integ};
+}
+function niceMax(v){return v<=0?1:Math.ceil(v*1.1*10)/10}
+function drawSVG(curves,emin,emax,xmin,xmax,q,rep,bond,ds){
+  const svg=document.getElementById("plot"), W=760,H=1020;
+  const m={l:120,r:90,t:75,b:100}, iw=W-m.l-m.r, ih=H-m.t-m.b;
+  const x=xv=>m.l+(xv-xmin)/(xmax-xmin)*iw;
+  const y=ev=>m.t+(emax-ev)/(emax-emin)*ih;
+  const clipId="curveClip";
+  let out=`<rect width="${W}" height="${H}" fill="white"/><defs><clipPath id="${clipId}"><rect x="${m.l}" y="${m.t}" width="${iw}" height="${ih}"/></clipPath></defs>`;
+  function axisTicks(low,high,autoId,inputId,target){
+    const auto=document.getElementById(autoId).checked,input=document.getElementById(inputId);
+    input.disabled=auto;
+    const span=high-low,rough=span/target,power=10**Math.floor(Math.log10(rough));
+    let step=auto?[1,2,2.5,5,10].map(n=>n*power).find(n=>n>=rough):Number(input.value);
+    if(!Number.isFinite(step)||step<=0)throw new Error("Axis intervals must be positive numbers.");
+    if(span/step>200)throw new Error("Interval is too small (more than 200 ticks). Increase it or enable Auto.");
+    if(auto)input.value=Number(step.toPrecision(12));
+    const first=Math.ceil(low/step-1e-9),last=Math.floor(high/step+1e-9),values=[];
+    for(let i=first;i<=last;i++){
+      const v=Number((i*step).toPrecision(14));
+      if(v>=low-step*1e-9&&v<=high+step*1e-9)values.push(Math.abs(v)<step*1e-9?0:v);
+    }
+    return {step,values};
+  }
+  const tickText=(v,step)=>{
+    if(v===0)return "0";
+    const decimals=Math.min(12,Math.max(0,-Math.floor(Math.log10(step))+2));
+    return (Math.abs(v)>=1e5||Math.abs(v)<0.001)?Number(v.toPrecision(6)).toExponential():Number(v.toFixed(decimals)).toString();
+  };
+  let xt,yt;
+  try{
+    xt=axisTicks(xmin,xmax,"autoXInterval","xInterval",5);
+    yt=axisTicks(emin,emax,"autoYInterval","yInterval",8);
+    document.getElementById("intervalStatus").textContent="";
+  }catch(e){document.getElementById("intervalStatus").textContent=e.message;return}
+  yt.values.forEach(v=>{const yy=y(v);out+=`<line x1="${m.l-9}" x2="${m.l}" y1="${yy}" y2="${yy}" stroke="black"/><text x="${m.l-15}" y="${yy+5}" text-anchor="end" font-size="23">${tickText(v,yt.step)}</text>`});
+  xt.values.forEach(v=>{const xx=x(v);out+=`<line x1="${xx}" x2="${xx}" y1="${H-m.b}" y2="${H-m.b+9}" stroke="black"/><text x="${xx}" y="${H-m.b+35}" text-anchor="middle" font-size="23">${tickText(v,xt.step)}</text>`});
+  if(xmin<=0&&xmax>=0)out+=`<line x1="${x(0)}" x2="${x(0)}" y1="${m.t}" y2="${H-m.b}" stroke="#222" stroke-width="1.5"/>`;
+  if(emin<=0&&emax>=0)out+=`<line x1="${m.l}" x2="${W-m.r}" y1="${y(0)}" y2="${y(0)}" stroke="#222" stroke-width="2"/><text x="${W-m.r+12}" y="${y(0)+5}" font-size="23">E_F</text>`;
+  const curveColor={COHP:"#00b84a",COOP:"#f28c18",COBI:"#8b5cf6"}[q];
+  curves.forEach((c,ci)=>{
+    let path="",started=false;
+    for(let i=0;i<c.E.length;i++){
+      const ev=c.E[i],val=c.Y[i];
+      if(!Number.isFinite(ev)||!Number.isFinite(val)||ev<emin||ev>emax){started=false;continue}
+      path+=(started?"L":"M")+x(val).toFixed(2)+" "+y(ev).toFixed(2);started=true;
+    }
+    out+=`<path d="${path}" clip-path="url(#${clipId})" fill="none" stroke="${curveColor}" stroke-width="2"/>`;
+  });
+  out+=`<rect x="${m.l}" y="${m.t}" width="${iw}" height="${ih}" fill="none" stroke="#111" stroke-width="2"/>`;
+  const label=q==="COHP"?(rep==="raw"?"pCOHP":"−pCOHP"):q==="COOP"?"COOP":"COBI";
+  out+=`<text x="${W/2}" y="40" text-anchor="middle" font-size="34">${q==="COHP"?"pCOHP":q==="COOP"?"COOP":"COBI"}</text>`;
+  out+=`<text x="${W/2}" y="${H-20}" text-anchor="middle" font-size="28">${label}</text>`;
+  out+=`<text x="30" y="${H/2}" transform="rotate(-90 30 ${H/2})" text-anchor="middle" font-size="28">Energy (eV)</text>`;
+  svg.innerHTML=out;
+}
+function clearPlot(msg){document.getElementById("plot").innerHTML=`<text x="380" y="510" text-anchor="middle" fill="#64748b">${msg}</text>`}
+function refresh(){
+  state.lastPlot=null;updateStatus();updateBondList();renderTable();
+  const ds=datasetFor(document.getElementById("quantity").value);
+  if(ds){
+    document.getElementById("emin").value=ds.E[0];
+    document.getElementById("emax").value=ds.E[ds.E.length-1];
+    renderPlot();
+  }else clearPlot("Load/select a LOBSTER dataset.");
+}
+async function loadFile(input,kind){
+  if(input.files[0]) setDataset(kind,await input.files[0].text(),input.files[0].name);
+}
+document.getElementById("loadFiles").onclick=async()=>{
+  if(!["cohpFile","coopFile","cobiFile"].some(id=>document.getElementById(id).files.length)){alert("Choose at least one LOBSTER file first.");return}
+  state.datasets={};state.lastPlot=null;
+  await loadFile(document.getElementById("cohpFile"),"COHP");
+  await loadFile(document.getElementById("coopFile"),"COOP");
+  await loadFile(document.getElementById("cobiFile"),"COBI");
+  document.getElementById("quantity").value=Object.keys(state.datasets)[0]||"COHP";
+  document.getElementById("autoX").checked=true;
+  refresh();
+};
+document.getElementById("quantity").onchange=refresh;
+document.getElementById("bond").onchange=renderPlot;
+document.getElementById("plotBtn").onclick=renderPlot;
+document.getElementById("resetRange").onclick=()=>{
+  const ds=datasetFor(document.getElementById("quantity").value);if(!ds)return;
+  document.getElementById("emin").value=ds.E[0];
+  document.getElementById("emax").value=ds.E[ds.E.length-1];
+  document.getElementById("autoX").checked=true;
+  renderPlot();
+};
+["xmin","xmax"].forEach(id=>document.getElementById(id).onchange=()=>{document.getElementById("autoX").checked=false;renderPlot()});
+["emin","emax","autoX","autoXInterval","autoYInterval","xInterval","yInterval"].forEach(id=>document.getElementById(id).onchange=renderPlot);
+["representation","sumSpin","showUp","showDown","showAverage","occupiedOnly"].forEach(id=>document.getElementById(id).onchange=renderPlot);
+document.getElementById("csvBtn").onclick=()=>{
+  const p=state.lastPlot;if(!p)return;
+  let csv=`# Xmin=${p.xmin}; Xmax=${p.xmax}; Emin=${p.emin}; Emax=${p.emax}\nEnergy_eV`;
+  p.curves.forEach(c=>csv+=","+JSON.stringify(c.name));csv+="\n";
+  const n=p.curves[0].E.length;
+  for(let i=0;i<n;i++){if(p.curves[0].E[i]<p.emin||p.curves[0].E[i]>p.emax)continue;
+    csv+=p.curves[0].E[i];
+    p.curves.forEach(c=>csv+=","+(c.E[i]>=p.emin&&c.E[i]<=p.emax?c.Y[i]:""));csv+="\n";
+  }
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download=`${p.q}_No${p.bond}_curve.csv`;a.click();URL.revokeObjectURL(a.href);
+};
+function downloadPlotBlob(blob,extension){
+  const p=state.lastPlot;
+  const url=URL.createObjectURL(blob),a=document.createElement("a");
+  a.href=url;a.download=`${p.q}_No${p.bond}.${extension}`;
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),10000);
+}
+function plotSVGText(){
+  const svg=document.getElementById("plot").cloneNode(true);
+  svg.setAttribute("xmlns","http://www.w3.org/2000/svg");
+  svg.setAttribute("width","760");svg.setAttribute("height","1020");
+  svg.removeAttribute("id");
+  return new XMLSerializer().serializeToString(svg);
+}
+function canSavePlot(){
+  if(!state.lastPlot){document.getElementById("saveStatus").textContent="Load data and draw a plot before saving.";return false}
+  if(document.getElementById("intervalStatus").textContent){document.getElementById("saveStatus").textContent="Correct the axis interval before saving.";return false}
+  return true;
+}
+document.getElementById("svgBtn").onclick=()=>{
+  if(!canSavePlot())return;
+  downloadPlotBlob(new Blob([plotSVGText()],{type:"image/svg+xml;charset=utf-8"}),"svg");
+  document.getElementById("saveStatus").textContent="SVG download started.";
+};
+document.getElementById("pngBtn").onclick=async()=>{
+  if(!canSavePlot())return;
+  const button=document.getElementById("pngBtn"),status=document.getElementById("saveStatus");
+  button.disabled=true;status.textContent="Preparing PNG…";
+  let url;
+  try{
+    await document.fonts.ready;
+    url=URL.createObjectURL(new Blob([plotSVGText()],{type:"image/svg+xml;charset=utf-8"}));
+    const img=new Image();
+    await new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=()=>reject(new Error("Unable to render the plot image."));img.src=url});
+    const canvas=document.createElement("canvas");canvas.width=2280;canvas.height=3060;
+    const context=canvas.getContext("2d");
+    context.fillStyle="white";context.fillRect(0,0,canvas.width,canvas.height);
+    context.drawImage(img,0,0,canvas.width,canvas.height);
+    const blob=await new Promise(resolve=>canvas.toBlob(resolve,"image/png"));
+    if(!blob)throw new Error("Unable to create PNG.");
+    downloadPlotBlob(blob,"png");status.textContent="PNG download started (2280 × 3060 pixels).";
+  }catch(e){status.textContent=e.message+" Try Save plot (SVG)."}
+  finally{if(url)URL.revokeObjectURL(url);button.disabled=false}
+};
+clearPlot("Load a LOBSTER file to begin.");
+</script>
+</body>
+</html>
