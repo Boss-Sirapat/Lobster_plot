@@ -73,6 +73,7 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{border-bottom:1px
 </div>
 <div class="checks">
 <label><input id="autoX" type="checkbox" checked> Auto X range</label>
+<label><input id="sharedX" type="checkbox" checked> Keep X scale across bonds</label>
 <label><input id="occupiedOnly" type="checkbox" checked> Bonding area up to EF</label>
 </div>
 <div class="row">
@@ -112,6 +113,7 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{border-bottom:1px
 <section>
 <div class="card">
 <svg id="plot" font-weight="800" font-family="LobsterPlotRounded, Arial, sans-serif" viewBox="0 0 760 1020" preserveAspectRatio="xMidYMid meet"></svg>
+<div id="plotSelection" class="status" role="status"></div>
 <div class="status">X-axis = −pCOHP / COOP / COBI value; Y-axis = Energy (eV), with EF at 0 eV. Use Xmin/Xmax to control the horizontal range and Emin/Emax to control the energy range.</div>
 </div>
 </section>
@@ -230,6 +232,7 @@ function renderTable(){
   rows+="</tbody></table>"; box.innerHTML=rows;
 }
 function renderPlot(){
+  state.lastPlot=null;
   const s=getSelection(); if(!s){clearPlot("Load/select a LOBSTER dataset.");return}
   const {q,ds,bond,rep,sum,up,down}=s;
   let emin=parseFloat(document.getElementById("emin").value), emax=parseFloat(document.getElementById("emax").value);
@@ -271,14 +274,32 @@ function renderPlot(){
     if(c.E[i]>=emin && c.E[i]<=emax && Number.isFinite(v)) visibleVals.push(v);
   }));
   if(document.getElementById("autoX").checked||!Number.isFinite(xmin)||!Number.isFinite(xmax)){
-    const peak=visibleVals.reduce((a,v)=>Math.max(a,Math.abs(v)),0);
+    let peak=visibleVals.reduce((a,v)=>Math.max(a,Math.abs(v)),0);
+    // A common scale preserves magnitude differences when switching interactions.
+    if(document.getElementById("sharedX").checked){
+      for(const row of ds.raw){
+        if(row[0]<emin||row[0]>emax)continue;
+        for(const interaction of ds.bonds){
+          const first=1+interaction.id*2;
+          const v0=row[first],v1=ds.nSpin>1?row[first+ds.nGroups*2]:0;
+          if(sum)peak=Math.max(peak,Math.abs(v0+v1));
+          else{
+            if(up||ds.nSpin===1)peak=Math.max(peak,Math.abs(v0));
+            if(down&&ds.nSpin>1)peak=Math.max(peak,Math.abs(v1));
+          }
+        }
+      }
+    }
     const extent=peak>0?peak*1.1:1;
     xmin=-extent; xmax=extent;
     document.getElementById("xmin").value=Number(xmin.toPrecision(6));
     document.getElementById("xmax").value=Number(xmax.toPrecision(6));
   }
   if(xmin>=xmax){alert("Xmin must be smaller than Xmax.");return}
-  drawSVG(curves,emin,emax,xmin,xmax,q,rep,bond,ds);
+  if(!drawSVG(curves,emin,emax,xmin,xmax,q,rep,bond,ds))return;
+  const interaction=ds.bonds.find(b=>b.id===bond);
+  document.getElementById("plotSelection").textContent=`Displayed: ${q} — ${interaction?.label||"Average"}. X range: ${xmin.toPrecision(4)} to ${xmax.toPrecision(4)}${document.getElementById("autoX").checked&&document.getElementById("sharedX").checked?" (shared across bonds)":""}.`;
+
   state.lastPlot={curves,emin,emax,xmin,xmax,q,rep,bond,ds,BA,AA,pct,integ};
 }
 function niceMax(v){return v<=0?1:Math.ceil(v*1.1*10)/10}
@@ -314,7 +335,7 @@ function drawSVG(curves,emin,emax,xmin,xmax,q,rep,bond,ds){
     xt=axisTicks(xmin,xmax,"autoXInterval","xInterval",5);
     yt=axisTicks(emin,emax,"autoYInterval","yInterval",8);
     document.getElementById("intervalStatus").textContent="";
-  }catch(e){document.getElementById("intervalStatus").textContent=e.message;return}
+  }catch(e){document.getElementById("intervalStatus").textContent=e.message;clearPlot("Correct the axis interval to redraw the selected bond.");document.getElementById("plotSelection").textContent="Plot not updated: "+e.message;return false}
   yt.values.forEach(v=>{const yy=y(v);out+=`<line x1="${m.l-9}" x2="${m.l}" y1="${yy}" y2="${yy}" stroke="black"/><text x="${m.l-15}" y="${yy+5}" text-anchor="end" font-size="23">${tickText(v,yt.step)}</text>`});
   xt.values.forEach(v=>{const xx=x(v);out+=`<line x1="${xx}" x2="${xx}" y1="${H-m.b}" y2="${H-m.b+9}" stroke="black"/><text x="${xx}" y="${H-m.b+35}" text-anchor="middle" font-size="23">${tickText(v,xt.step)}</text>`});
   if(xmin<=0&&xmax>=0)out+=`<line x1="${x(0)}" x2="${x(0)}" y1="${m.t}" y2="${H-m.b}" stroke="#222" stroke-width="1.5"/>`;
@@ -335,6 +356,7 @@ function drawSVG(curves,emin,emax,xmin,xmax,q,rep,bond,ds){
   out+=`<text x="${W/2}" y="${H-20}" text-anchor="middle" font-size="28">${label}</text>`;
   out+=`<text x="30" y="${H/2}" transform="rotate(-90 30 ${H/2})" text-anchor="middle" font-size="28">Energy (eV)</text>`;
   svg.innerHTML=out;
+  return true;
 }
 function clearPlot(msg){document.getElementById("plot").innerHTML=`<text x="380" y="510" text-anchor="middle" fill="#64748b">${msg}</text>`}
 function refresh(){
@@ -370,7 +392,7 @@ document.getElementById("resetRange").onclick=()=>{
   renderPlot();
 };
 ["xmin","xmax"].forEach(id=>document.getElementById(id).onchange=()=>{document.getElementById("autoX").checked=false;renderPlot()});
-["emin","emax","autoX","autoXInterval","autoYInterval","xInterval","yInterval"].forEach(id=>document.getElementById(id).onchange=renderPlot);
+["emin","emax","autoX","sharedX","autoXInterval","autoYInterval","xInterval","yInterval"].forEach(id=>document.getElementById(id).onchange=renderPlot);
 ["representation","sumSpin","showUp","showDown","showAverage","occupiedOnly"].forEach(id=>document.getElementById(id).onchange=renderPlot);
 document.getElementById("csvBtn").onclick=()=>{
   const p=state.lastPlot;if(!p)return;
